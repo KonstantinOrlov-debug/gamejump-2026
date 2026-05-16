@@ -3,6 +3,13 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+// Shared interface — both enemy types implement this so the player
+// doesn't need to know which kind it is hitting.
+public interface IDamageable
+{
+    void TakeDamage(int amount);
+}
+
 public class PlayerController : MonoBehaviour
 {
     PlayerInput playerInput;
@@ -18,7 +25,6 @@ public class PlayerController : MonoBehaviour
     public float jumpHeight = 1.2f;
 
     Vector3 _PlayerVelocity;
-
     bool isGrounded;
 
     [Header("Camera")]
@@ -48,7 +54,6 @@ public class PlayerController : MonoBehaviour
     {
         isGrounded = controller.isGrounded;
 
-        // Repeat Inputs
         if (input.Attack.IsPressed())
         { Attack(); }
 
@@ -60,7 +65,7 @@ public class PlayerController : MonoBehaviour
         if (!movementLocked)
             MoveInput(input.Movement.ReadValue<Vector2>());
         else
-            ApplyGravityOnly(); // Prevents floating by still resolving gravity
+            ApplyGravityOnly();
     }
 
     void LateUpdate()
@@ -79,7 +84,6 @@ public class PlayerController : MonoBehaviour
         controller.Move(_PlayerVelocity * Time.deltaTime);
     }
 
-    // Applies gravity without allowing horizontal movement input
     void ApplyGravityOnly()
     {
         _PlayerVelocity.y += gravity * Time.deltaTime;
@@ -97,20 +101,15 @@ public class PlayerController : MonoBehaviour
         xRotation = Mathf.Clamp(xRotation, -80, 80);
 
         cam.transform.localRotation = Quaternion.Euler(xRotation, 0, 0);
-
         transform.Rotate(Vector3.up * (mouseX * Time.deltaTime * sensitivity));
     }
 
-    void OnEnable()
-    { input.Enable(); }
-
-    void OnDisable()
-    { input.Disable(); }
+    void OnEnable() { input.Enable(); }
+    void OnDisable() { input.Disable(); }
 
     void Jump()
     {
-        if (movementLocked) return; // Block jump when movement is locked
-
+        if (movementLocked) return;
         if (isGrounded)
             _PlayerVelocity.y = Mathf.Sqrt(jumpHeight * -3.0f * gravity);
     }
@@ -121,7 +120,6 @@ public class PlayerController : MonoBehaviour
         input.Attack.started += ctx => Attack();
     }
 
-    // Call these from anywhere to lock/unlock player movement
     public void LockMovement() => movementLocked = true;
     public void UnlockMovement() => movementLocked = false;
 
@@ -138,23 +136,19 @@ public class PlayerController : MonoBehaviour
 
     public void ChangeAnimationState(string newState)
     {
-        // STOP THE SAME ANIMATION FROM INTERRUPTING WITH ITSELF //
         if (currentAnimationState == newState) return;
-
-        // PLAY THE ANIMATION //
         currentAnimationState = newState;
         animator.CrossFadeInFixedTime(currentAnimationState, 0.2f);
     }
 
     void SetAnimations()
     {
-        // If player is not attacking
         if (!attacking)
         {
             if (_PlayerVelocity.x == 0 && _PlayerVelocity.z == 0)
-            { ChangeAnimationState(IDLE); }
+                ChangeAnimationState(IDLE);
             else
-            { ChangeAnimationState(WALK); }
+                ChangeAnimationState(WALK);
         }
     }
 
@@ -169,7 +163,6 @@ public class PlayerController : MonoBehaviour
     public int attackDamage = 1;
     public LayerMask attackLayer;
 
-    public GameObject hitEffect;
     public AudioClip swordSwing;
     public AudioClip hitSound;
 
@@ -181,7 +174,7 @@ public class PlayerController : MonoBehaviour
     {
         if (!readyToAttack || attacking) return;
 
-        movementLocked = true; // Lock movement during attack
+        movementLocked = true;
         readyToAttack = false;
         attacking = true;
 
@@ -203,22 +196,23 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-
     void ResetAttack()
     {
-        movementLocked = false; // Unlock movement after attack
+        movementLocked = false;
         attacking = false;
         readyToAttack = true;
     }
 
     void AttackRaycast()
     {
-        if (Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, attackDistance, attackLayer))
+        if (Physics.Raycast(cam.transform.position, cam.transform.forward,
+                            out RaycastHit hit, attackDistance, attackLayer))
         {
             HitTarget(hit.point);
 
-            if (hit.transform.TryGetComponent<Actor>(out Actor T))
-            { T.TakeDamage(attackDamage); }
+            // Works with any component that implements IDamageable
+            if (hit.transform.TryGetComponent<IDamageable>(out IDamageable target))
+                target.TakeDamage(attackDamage);
         }
     }
 
@@ -226,8 +220,5 @@ public class PlayerController : MonoBehaviour
     {
         audioSource.pitch = 1;
         audioSource.PlayOneShot(hitSound);
-
-        GameObject GO = Instantiate(hitEffect, pos, Quaternion.identity);
-        Destroy(GO, 20);
     }
 }
